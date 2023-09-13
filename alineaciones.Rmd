@@ -1,5 +1,5 @@
 
-Para obtener datos futbolísticos de distintos proveedores disponemos de la librería de rstats **worldfootballR**, está disponible en CRAN y con ella podremos extraer datos de:
+Para obtener datos sobre fútbol de distintos proveedores disponemos de la librería de rstats **worldfootballR**, está disponible en CRAN, con ella podremos extraer datos de:
 
 - <a href="https://www.fotmob.com/es" target=_blank>Fotmob</a>
 - <a href="https://fbref.com/es/" target=_blank>FBRef</a>
@@ -7,7 +7,7 @@ Para obtener datos futbolísticos de distintos proveedores disponemos de la libr
 - <a href="https://fbref.com/es/" target=_blank>FBRef</a>
 - <a href="https://understat.com/" target=_blank>Understat</a>
 
-Y por supuesto, lo primero que tenéis que hacer es recorrer esas web y pensad en como haríais el scraping para entender mejor como van a trabajar las funciones que tiene este paquete. Al estar en CRAN no vamos a empezar por instalar así que directamente vamos a obtener los partidos de la Liga con un rango de fechas. 
+Por supuesto, lo primero que tenéis que hacer es navegar por esas web y pensad en como haríais el scraping, de ese modo entenderéis mejor como van a trabajar las funciones que tiene este paquete. Al estar en CRAN no vamos a empezar por instalar así que directamente vamos a obtener los partidos de la Liga con un rango de fechas. 
 
 ```{r}
 library(worldfootballR)
@@ -19,13 +19,13 @@ partidos <- data.frame(url=fb_match_urls(country = "ESP", gender = "M",
                           season_end_year = 2023, tier = "1st"))
 ```
 
-La función empleada es fb_match_urls con las opciones que podéis consultar en la ayuda pero os podéis imaginar que me he descargado la url de los partidos de la temporada 2023, si navegáis por FBRef al final es una web con información que aparece en tablas por eso os recomiendo entender como se haría el scraping. Esa lista es extensa, pero podemos descargarnos solamente los partidos del Real Madrid. 
+La función empleada es fb_match_urls con las opciones que podéis consultar en la ayuda pero os podéis imaginar que descarga la url de los partidos de la temporada 2023, si navegáis por FBRef al final es una web con información que aparece en tablas por eso os recomiendo entender como se haría el scraping. Esa lista es extensa si deseamos bajar todos los partidos, pero podemos descargarnos solamente los partidos del Real Madrid. 
 
 ```{r}
 partidos <- partidos %>% filter(grepl("Real-Madrid",url) >0 )
 ```
 
-Ahora partido a partido de esas 38 jornadas y con la función fb_match_lineups vamos a obtener las alineaciones de todos esos encuentros mediante un bucle, es un proceso largo, paciencia porque son 38 descargas.  
+Ahora _partido a partido_ de esas 38 jornadas y con la función fb_match_lineups vamos a obtener las alineaciones de todos esos encuentros mediante un bucle, es un proceso largo, paciencia porque son 38 descargas.  
 
 ```{r}
 alineaciones <- tibble()
@@ -59,7 +59,7 @@ alineaciones <- alineaciones %>%
 alineaciones_RM <- alineaciones %>% filter(equipo=="RM")
 ```
 
-En cualquier caso, hay que validar siempre lo que se está haciendo.
+El objeto alineaciones_RM tiene las alineaciones del Real Madrid en la Liga temporada 22-23. En cualquier caso, hay que validar siempre lo que se está haciendo.
 
 ```{r}
 alineaciones_RM %>% group_by(Player_Name) %>% 
@@ -68,7 +68,7 @@ alineaciones_RM %>% group_by(Player_Name) %>%
   arrange(desc(conteo))
 ```
 
-Y aquí lo que recomiendo es ir al final y ver que en la alineación del Real Madrid no aparezca ningún jugador "extraño". Una vez validado ya tenemos todas las alineaciones titulares del Real Madrid y se puede crear un gráfico de ranking. El objetivo de este gráfico de ranking es contar partidos de jugadores por lo que lo más adecuado parece un gráfico de barras; además, al tener hasta 21 jugadores lo mejor será disponer ese gráfico horizontalmente.
+Y aquí lo que recomiendo es ir al final y ver que en la alineación del Real Madrid no aparezca ningún jugador "extraño", salen Mariano y Hazard. Una vez validado ya tenemos todas las alineaciones titulares del Real Madrid y se puede crear un gráfico de ranking. El objetivo de este gráfico de ranking es contar partidos de jugadores por lo que lo más adecuado parece un gráfico de barras; además, al tener hasta 21 jugadores lo mejor será disponer ese gráfico horizontalmente.
 
 ```{r}
 alineaciones_RM %>% group_by(Player_Name) %>% 
@@ -85,5 +85,5 @@ Y ya tenemos el ranking de titulares del Real Madrid en la Liga temporada 22/23,
 
 Los datos están dispuestos en la forma que le interesa al suministrador de datos, tiene que ser el analista quien le de forma y por eso es importante conocer como están los datos y que variables contienen, es cierto que el código es sencillo, pero los tiempos de extracción se han alargado debido a que es scraping puro. 
 
-En sucesivas entradas del blog seguiremos estudiando funciones de esta librería worldfootballR y comprendiendo mejor como funciona. 
+En sucesivas entradas del blog seguiremos estudiando funciones de esta librería worldfootballR y comprendiendo mejor como funciona. Por supuesto tenéis <a href="https://github.com/rvaquerizo02/datos-futbol-rstats" target=_blank>este código en el repositorio de git. </a>
 
