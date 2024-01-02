@@ -1,0 +1,39 @@
+Vamos a realizar un ejercicio con estadística básica que permite encontrar variables en un conjunto de datos con pocas posibilidades. Se trata de realizar un modelo de xG con un conjunto de datos con pocas variables.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(worldfootballR)
+```
+
+Nos descargamos todos los tiros de la Liga de la temporada 23/24 de Understat.
+
+```{r}
+tiros_liga_2015 <- understat_league_season_shots(league="La liga", season_start_year=2015)
+tiros_liga_2016 <- understat_league_season_shots(league="La liga", season_start_year=2016)
+tiros_liga_2017 <- understat_league_season_shots(league="La liga", season_start_year=2017)
+tiros_liga_2018 <- understat_league_season_shots(league="La liga", season_start_year=2018)
+tiros_liga_2019 <- understat_league_season_shots(league="La liga", season_start_year=2019)
+tiros_liga_2020 <- understat_league_season_shots(league="La liga", season_start_year=2020)
+tiros_liga_2021 <- understat_league_season_shots(league="La liga", season_start_year=2021)
+tiros_liga_2022 <- understat_league_season_shots(league="La liga", season_start_year=2022)
+```
+
+```{r}
+tiros_liga <- rbind.data.frame(tiros_liga_2015, tiros_liga_2016, tiros_liga_2017, tiros_liga_2018,
+                               tiros_liga_2019, tiros_liga_2020, tiros_liga_2021, tiros_liga_2022)
+
+saveRDS(tiros_liga, './data/tiros_liga.rds')
+
+tiros_liga <- tiros_liga %>% mutate(distancia = 1 - X)
+```
+
+```{r}
+ tiros_liga%>% ggplot(aes(distancia, fill = season, color=season)) + geom_density(alpha=0.3) + 
+  ylim(0, 0.3) + 
+  facet_grid(season ~ ., margins = TRUE, scales = "free")
+```
+
+```{r}
+tiros_liga %>% group_by(season) %>% filter(result=='Goal') %>% summarise(media=median(distancia))
+```
+

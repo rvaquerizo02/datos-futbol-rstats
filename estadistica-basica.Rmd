@@ -1,0 +1,363 @@
+---
+title: "Ejemplo de estadística básica"
+output:
+  html_document:
+    df_print: paged
+---
+
+Vamos a realizar un ejercicio con estadística básica que permite encontrar variables en un conjunto de datos con pocas posibilidades. Se trata de realizar un modelo de xG con un conjunto de datos con pocas variables.
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(LearnGeom)
+library(worldfootballR)
+```
+
+Nos descargamos todos los tiros de la Liga de la temporada 23/24 de Understat.
+
+```{r}
+tiros_liga <- understat_league_season_shots(league="La liga", season_start_year=2023)
+```
+
+La tendencia es decir no tenemos nada que nos permita medir la calidad de los tiros porque tiene pocas variables. Pero lo que tenemos que demostrar es la disponibilidad de información a partir de pocas variables.
+
+Siempre empezaremos por describir los datos, por el análisis EDA. Para ello contamos con la librería `DataExplorer` y simplemente distinguimos entre variables numéricas y factores.
+
+```{r}
+library(DataExplorer)
+plot_bar(tiros_liga)
+plot_histogram(tiros_liga)
+```
+
+Con la función `plot_bar` se crean gráficos de barras para los factores y con `plot_histogram` se realizan histogramas para las variables numéricas. A la vista de los datos es cierto que hay poco donde sacar información.
+
+Entre las variables disponibles es necesario determinar aquella que hace el rol de variable target. Es necesario generarla.
+
+```{r}
+tiros_liga <- tiros_liga %>% mutate(gol=ifelse(result=='Goal',1,0))
+table(tiros_liga$gol)
+```
+
+Cuando trabajéis con datos acostumbrad a realizar pequeñas validaciones en cada paso que realizáis. Entre lo que disponemos las coordenadas pueden ayudarnos mucho a medir esa calidad de los tiros pero necesitamos conocer como son las coordenadas en función del proveedor.
+
+```{r}
+penaltis <- tiros_liga %>% filter(situation=='Penalty')
+```
+
+La base de coordenadas es 1*1 por lo que es posible calcular la distancia a portería empleando la X.
+
+```{r}
+tiros_liga <- tiros_liga %>% mutate(distancia = 1 - X)
+```
+
+De un modo muy sencillo tenemos una variable, ahora podemos comprobar su funcionamiento contrastando el comportamiento de un factor (gol-no gol) con una variable cuantitativa (distancia).
+
+```{r}
+ggplot(data=tiros_liga, aes(x=distancia, y=as.factor(gol))) + geom_boxplot()
+```
+
+Para medir la capacidad discriminatoria de la variable distancia inicialmente se obtiene un gráfico boxplot. Este gráfico crea una caja donde están el 50% de las observaciones, dentro de esa caja una línea horizontal pinta la media y en líneas contiene todas las observaciones que se desvían 2 veces de la desviación típica, si alguna observación está fuera de las líneas aparecen puntos que se denominan outliers, valores extremos.
+
+A la vista del gráfico los goles se marcan a distancias más cercanas aunque hay algunos casos de tiros muy lejanos, los que no han resultado en gol son tiros más lejanos, incluso algún tiro desde la portería contraria se ha considerado en los datos del proveedor.
+
+Otro gráfico que nos interesa conocer es el gráfico de densidad.
+
+```{r}
+ggplot(data=tiros_liga, aes(x=distancia, fill=as.factor(gol), color=as.factor(gol))) +
+  geom_density(alpha=0.3)
+```
+
+El gráfico de densidad crea una función continua que estudia sobre que valores de la variable en estudio se sitúan las observaciones. Además, en este caso las funciones de densidad (funciones que cuentan observaciones) determinan que distancias más cortas ofrecen mayor número de goles.
+
+En este caso es mejor emplear densidades en vez de histogramas:
+
+```{r}
+ggplot(data=tiros_liga, aes(x=distancia, fill=as.factor(gol), color=as.factor(gol))) +
+  geom_histogram(alpha=0.3)
+```
+
+Ya tenemos una variable capaz de discriminar si un tiro es gol.
+
+Seguimos buscando variables capaces de discriminar que un tiro es gol. Disponemos de variables cualitativas que también tenemos que estudiar. Empecemos por la situación de juego.
+
+```{r}
+tiros_liga %>% group_by(situation) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Hay una situación de juego que claramente tiene una mayor probabilidad de gol, los penaltis. Es necesario plantearse si deben aparecer en el análisis. Eliminarlos es introducir sesgo en los datos pero es más que justificado.
+
+```{r}
+tiros_liga2 <- tiros_liga %>% filter(situation != 'Penalty')
+```
+
+Como el proceso de extracción es largo se opta por crear otro conjunto de datos para evitar posteriores errores. Con este nuevo conjunto de datos se continúa analizando variables.
+
+```{r}
+tiros_liga2 %>% group_by(shotType) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+La parte con la que se realiza el tiro no parece discriminar la calidad del tiro a excepción de otras partes del cuerpo que claramente deben estar relacionadas con rebotes.
+
+```{r}
+tiros_liga2 %>% filter(shotType=='OtherBodyPart') %>% 
+  group_by(lastAction) %>% summarise(numero_tiros =n())
+```
+
+No parece ser así pero este tipo de tiros también van a ser eliminados de los datos de trabajo.
+
+```{r}
+tiros_liga2 <- tiros_liga2 %>% filter(shotType !='OtherBodyPart') 
+```
+
+Continuamos describiendo nuestra variable respuesta frente a los factores disponibles.
+
+```{r}
+tiros_liga2 %>% group_by(lastAction) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+La acción previa al tiro parece tener buena capacidad discriminatoria pero se trata de un factor con un gran número de niveles, un problema típico de factores. Se recomendaría agruparlos en función de la situación de juego que describen pero se propone una agrupación muy sencilla, toda situación previa con menos de 150 observaciones se agrupan en un nivel "Otros".
+
+```{r}
+acciones <- tiros_liga2 %>% group_by(lastAction) %>% summarise(numero_tiros = n()) %>% 
+  mutate(fr_accion = ifelse(numero_tiros>=100, lastAction, "Otros")) %>% 
+  select(-numero_tiros)
+
+tiros_liga2 <- tiros_liga2 %>% left_join(acciones)
+```
+
+Replicamos el conteo.
+
+```{r}
+tiros_liga2 %>% group_by(fr_accion) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Ya tenemos una variable capaz de determinar la calidad del tiro. Además, fijaos que cruces de variables consiguen capacidades de discriminación pero nos encontramos con el problema de la prevalencia.
+
+```{r}
+tiros_liga2 %>% group_by(lastAction, shotType) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Este tipo de cruces se conoce como interacción, ese cruce lo descartamos por la dificultad que tendría explicar su comportamiento. Pero se pueden plantear ejercicios como posición de tiro y pierna de tiro, posición de tiro - "pierna buena".
+
+Ya no hay más variables cualitativas disponibles, repito, se puede iterar con ellas en búsqueda de nuevos factores. Entre las variables cuantitativas se dispone del minuto de juego, por ejemplo:
+
+```{r}
+tiros_liga2 %>% mutate(minuto_juego = as.numeric(minute)) %>% 
+ggplot(aes(x=minuto_juego, fill=as.factor(gol), color=as.factor(gol))) +
+  geom_density(alpha=0.3)
+```
+
+El comportamiento del resultado del tiro es completamente independiente del minuto de juego, no parece que el cansancio o estar frío en el inicio afecte a la calidad del tiro. Si podemos obtener el ángulo de tiro determinando donde están los postes empleando geometría básica.
+
+```{r}
+postes <- tiros_liga %>% filter(result=='ShotOnPost')
+
+poste_izquierda = c(1,min(postes$Y))
+poste_derecha = c(1,max(postes$Y))
+
+posicion <- data.frame(x=tiros_liga2$X, y=tiros_liga2$Y)
+posicion <- posicion %>% rowwise() %>%
+  mutate(angulo = Angle( poste_izquierda, c(x,y), poste_derecha))
+```
+
+Determinamos la posición de los postes y se añade el ángulo de tiro como una variable más. Comprobamos su funcionamiento.
+
+```{r}
+tiros_liga2 <- cbind.data.frame(tiros_liga2, angulo=posicion$angulo)
+
+ggplot(data=tiros_liga2, aes(x=angulo, fill=as.factor(gol), color=as.factor(gol))) +
+  geom_density(alpha=0.3)
+```
+
+Es evidente que a mayor ángulo mayor posibilidad de meter gol, pero esta variable tiene que estar muy correlada con la distancia.
+
+```{r}
+cor(tiros_liga2$distancia, tiros_liga2$angulo)
+
+ggplot(tiros_liga2,aes(x=distancia,y=angulo)) + geom_point()
+```
+
+Cuando tenemos correlaciones y variables tan discriminatorias se recomienda discretizar. Se agrupan los tiros en 10 tramos de longitud:
+
+```{r}
+grupos = 10
+tiros_liga2 <- tiros_liga2 %>% arrange(distancia) %>%
+  mutate(fr_distancia = paste0('D-', sprintf("%02d",(ceiling((row_number()/n())*grupos)))))
+
+tiros_liga2 %>% group_by(fr_distancia) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Hay que trabajar más esta variable porque son grupos con el 10% de los tiros disponibles. La mejor situación sería pasar la distancia a metros y que así esta variable tomara un "sentido de negocio" pero los campos de fútbol tienen unos intervalos de longitud que pueden llevar a error por ello se codifica del siguiente modo:
+
+```{r}
+tiros_liga2 %>% group_by(fr_distancia) %>% summarise(max_distancia = max(distancia),
+                                                     porcen_gol = sum(gol)/n())
+```
+
+```{r}
+tiros_liga2 <- tiros_liga2 %>% mutate(fr_distancia=case_when(
+  distancia <=0.05 ~ '1 Muy cerca',
+  distancia <=0.08 ~ '2 Cerca',
+  distancia <= 0.10 ~ '3 Media distancia',
+  distancia <= 0.18 ~ '4 Larga distancia', 
+  TRUE ~ '5 Muy larga distancia'))
+
+tiros_liga2 %>% group_by(fr_distancia) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Observad la buena capacidad para medir distintos porcentajes de gol. Con el ángulo se realiza el mismo proceso.
+
+```{r}
+tiros_liga2<- tiros_liga2 %>%
+  mutate(fr_angulo = case_when(
+    angulo>=90 ~ "1 amplio",
+    angulo>=60 ~ "2 medio",
+    angulo>=30 ~ "3 estrecho",
+    TRUE ~ '4 muy estrecho' ))
+
+tiros_liga2 %>% group_by(fr_angulo) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Nos quedamos con grupos de baja prevalencia, es necesario modificar esos primeros ángulos.
+
+```{r}
+tiros_liga2<- tiros_liga2 %>%
+  mutate(fr_angulo = case_when(
+    angulo>=140 ~ "1 amplio",
+    angulo>=100 ~ "2 medio",
+    angulo>=75 ~ "3 estrecho",
+    TRUE ~ '4 muy estrecho' ))
+
+tiros_liga2 %>% group_by(fr_angulo) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Y observad que capacidad de medir la calidad del tiro si juntamos distancia con ángulo:
+
+```{r}
+tiros_liga2 %>% group_by(fr_distancia, fr_angulo) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+En este punto ya tenemos un conjunto de datos que nos permite realizar un modelo estadístico, el más sencillo y el que mejor se puede controlar en clasificaciones binomiales es la regresión logística, para entender que es lo que hace vamos a realizar un modelo con una sola variable.
+
+```{r}
+modelo_prueba <- glm(data= tiros_liga2, formula = as.factor(gol) ~ fr_angulo, family = "binomial")
+summary(modelo_prueba)
+```
+
+Recordamos la importancia del contraste del parámetro $\beta_0=0$ que en este caso se rechaza para todos los parámetros presentes, es decir, hay relación lineal entre esa agrupación del ángulo de tiro y la posibilidad de meter gol. Pero, para entender bien que hace el modelo lineal nos fijamos en los parámetros.
+
+```{r}
+exp(modelo_prueba$coefficients[1])/(1+exp(modelo_prueba$coefficients[1]))
+exp(modelo_prueba$coefficients[1]+modelo_prueba$coefficients[2])/(1+exp(modelo_prueba$coefficients[1]+modelo_prueba$coefficients[2]))
+```
+
+Esos son el primer y el segundo parámetro, si recordamos la tabla de frecuencias de la clasificación del ángulo.
+
+```{r}
+tiros_liga2 %>% group_by(fr_angulo) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+Observad el porcentaje de goles en el primer y segundo nivel del factor, son lo mismo. Un modelo lineal lo que hace el recoger proporciones en base a todas las variables presentes, realiza una especie de "microsegmentación" de observaciones. Sería muy complicado saber que hace el cruce del total de registros y por ello se emplea el modelo.
+
+Ahora que sabemos que hace un modelo lineal se plantea un ejemplo con los datos disponibles. Cuando realicemos modelos el primer paso será crear un conjunto de datos de entrenamiento y otro para testear el funcionamiento del modelo y determinar unas hipótesis de acierto.
+
+```{r}
+indices <- sample(seq(1:nrow(tiros_liga2)) , round(nrow(tiros_liga2)*0.75))
+
+train <- tiros_liga2[indices,]
+test <- tiros_liga2[-indices,]
+```
+
+Se utiliza la función sample para crear un conjunto de índices que separen los datos en un 75% de entrenamiento y un 25% de test. Pasamos a realizar el modelo.
+
+```{r}
+modelo.1 <- glm(data=train, formula = gol ~ situation + shotType + fr_accion + fr_distancia + fr_angulo, 
+                family="binomial")
+
+summary(modelo.1)
+```
+
+Me está eliminando la distancia y el tipo de tiro. Quiero que la distancia salga como variable, tengo que hacerla iterar con el ángulo.
+
+```{r}
+tiros_liga3 <- tiros_liga2 %>% mutate(fr_distancia_angulo=case_when(
+  distancia <=0.06 & angulo <= 157 ~ '1 Muy cerca - Sin angulo',
+  distancia <=0.06 ~ '2 Muy cerca - Con angulo',
+  distancia <=0.08 & angulo <= 140  ~ '3 Cerca - Sin angulo',
+  distancia <=0.08   ~ '4 Cerca - Con angulo',
+  distancia <= 0.11 & angulo <= 120 ~ '5 Media distancia - Sin angulo',
+  distancia <= 0.11  ~ '6 Media distancia - Con angulo',
+  distancia <= 0.18 & angulo <= 100 ~ '7 Larga distancia - Sin angulo', 
+  distancia <= 0.18  ~ '8 Larga distancia - Con angulo',
+  TRUE ~ '9 Muy larga distancia'))
+
+tiros_liga3 %>% group_by(fr_distancia_angulo) %>% summarise(numero_tiros =n(),
+                                                  porcen_gol = sum(gol)/n())
+```
+
+He iterado manualmente y tengo una variable como deseo y ya estoy en disposición de meterla en el modelo. Pero tengo que rehacer los conjuntos de entrenamiento.
+
+```{r}
+indices <- sample(seq(1:nrow(tiros_liga3)) , round(nrow(tiros_liga3)*0.75))
+
+train <- tiros_liga3[indices,]
+test <- tiros_liga3[-indices,]
+```
+
+Vuelvo a crear otro modelo.
+
+```{r}
+modelo.2 <- glm(data=train, formula = gol ~ situation + shotType + fr_accion + fr_distancia_angulo, 
+                family="binomial")
+
+summary(modelo.2)
+```
+
+En cualquier caso, dejamos el modelo de esta manera. Ahora comprobamos su funcionamiento.
+
+```{r}
+prediccion <- predict(modelo.2, test, type='response')
+test$prediccion_xg = prediccion
+```
+
+La primera validación
+
+```{r}
+sum(test$gol)/nrow(test)
+
+test<- test %>% arrange(desc(prediccion_xg))
+
+ejemplo <- test %>% filter(row_number()<=nrow(test)*0.1)
+
+sum(ejemplo$gol)/sum(test$gol)
+```
+
+Sin modelo debería obtener 0.10 goles en el 10% de las observaciones, pero ordenando obtengo un 0.32 por lo que estoy mejorando en:
+
+```{r}
+(sum(ejemplo$gol)/sum(test$gol))/(sum(test$gol)/nrow(test))
+```
+
+Más de 3 veces al azar con un modelo muy sencillo. Si lo comparamos con el modelo Understat:
+
+```{r}
+test<- test %>% arrange(desc(xG))
+ejemplo <- test %>% filter(row_number()<=nrow(test)*0.1)
+
+sum(ejemplo$gol)/sum(test$gol)
+```
+
+El modelo de nuestro proveedor es mejor que el nuestro, pero este modelo está usando 4 variables obtenidas de una forma muy sencilla.
+
+Si queréis mejorar el modelo o tenéis dudas contactad conmigo en raul.vaquerizo@gmail.com
